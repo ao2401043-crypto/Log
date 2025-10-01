@@ -1,41 +1,75 @@
-const { Client, GatewayIntentBits, EmbedBuilder, AttachmentBuilder } = require("discord.js");
-const Canvas = require("canvas");
+const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js");
+const fs = require("fs");
 require("dotenv").config();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
+client.commands = new Collection();
+
+// تحميل الكوماندات
+const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+for (const file of commandFiles) {
+  const command = require(`./commands/${file}`);
+  client.commands.set(command.data.name, command);
+}
+
+// إيفنت أوامر السلاش
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ content: "❌ صار خطأ!", ephemeral: true });
+  }
+});
+
+// =======================
+// الأحداث (مثال: حذف رسالة)
+// =======================
+const { EmbedBuilder, AttachmentBuilder } = require("discord.js");
+const Canvas = require("canvas");
+const { Database } = require("st.db");
+const db = new Database("./Json-db/logChannels.json");
+
 async function generateMessageImage(author, content) {
-  const background = await Canvas.loadImage("./background.png");
-  const canvas = Canvas.createCanvas(800, 200);
+  const canvas = Canvas.createCanvas(800, 150);
   const ctx = canvas.getContext("2d");
 
-  ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#36393f";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const avatar = await Canvas.loadImage(author.displayAvatarURL({ extension: "png" }));
-  ctx.drawImage(avatar, 20, 60, 60, 60);
+  ctx.drawImage(avatar, 20, 20, 50, 50);
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 22px Arial";
-  ctx.fillText(author.tag, 100, 90);
+  ctx.font = "bold 20px Arial";
+  ctx.fillText(author.tag, 80, 40);
 
-  ctx.fillStyle = "#dddddd";
-  ctx.font = "18px Arial";
-  ctx.fillText(content || "لا يوجد نص.", 100, 130);
+  ctx.fillStyle = "#dcddde";
+  ctx.font = "16px Arial";
+  ctx.fillText(content || "لا يوجد نص.", 80, 70);
 
   return new AttachmentBuilder(canvas.toBuffer(), { name: "message.png" });
 }
 
-// 🗑️ لوق الحذف
 client.on("messageDelete", async (message) => {
   if (message.partial || !message.author || message.author.bot) return;
 
-  const logChannel = await message.guild.channels.fetch("1406354200723456112");
+  const logChannelId = db.get(`log_${message.guild.id}`);
+  if (!logChannelId) return;
+  const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
   if (!logChannel) return;
 
   const attachment = await generateMessageImage(message.author, message.content);
@@ -49,39 +83,6 @@ client.on("messageDelete", async (message) => {
 📝 **المحتوى:** ${message.content || "رسالة بدون نص"}
     `)
     .setColor(0xFF0000)
-    .setImage("attachment://message.png")
-    .setTimestamp();
-
-  // لو في صورة بالرسالة
-  if (message.attachments.size > 0) {
-    embed.addFields({ name: "📷 مرفق", value: message.attachments.first().url });
-  }
-
-  await logChannel.send({ embeds: [embed], files: [attachment] });
-});
-
-// ✏️ لوق التعديل
-client.on("messageUpdate", async (oldMessage, newMessage) => {
-  if (oldMessage.partial || newMessage.partial) return;
-  if (!oldMessage.author || oldMessage.author.bot) return;
-  if (oldMessage.content === newMessage.content) return;
-
-  const logChannel = await newMessage.guild.channels.fetch("ضع_ايدي_الروم_هنا");
-  if (!logChannel) return;
-
-  const attachment = await generateMessageImage(newMessage.author, newMessage.content);
-
-  const embed = new EmbedBuilder()
-    .setTitle("✏️ MESSAGE EDITED")
-    .setDescription(`
-👤 **العضو:** ${newMessage.author}
-🕒 **تاريخ الإرسال:** <t:${Math.floor(newMessage.createdTimestamp / 1000)}:F>
-✏️ **تاريخ التعديل:** <t:${Math.floor(Date.now() / 1000)}:F>
-
-**قبل:** ${oldMessage.content || "فارغ"}
-**بعد:** ${newMessage.content || "فارغ"}
-    `)
-    .setColor(0xFFA500)
     .setImage("attachment://message.png")
     .setTimestamp();
 
