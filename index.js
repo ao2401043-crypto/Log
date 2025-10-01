@@ -35,7 +35,7 @@ async function generateMessageImage(author, content) {
 client.on("messageDelete", async (message) => {
   if (message.partial || !message.author || message.author.bot) return;
 
-  const logChannel = await message.guild.channels.fetch("ضع_ايدي_الروم_هنا");
+  const logChannel = await message.guild.channels.fetch("1406354200723456112");
   if (!logChannel) return;
 
   const attachment = await generateMessageImage(message.author, message.content);
